@@ -13,7 +13,7 @@ Make sure an audio source is plugged into the _left input channel_ of the NTS-1 
 ### Single trigger mode
 1. Turn the **B encoder to the far left** to enable **single trigger** sample mode (_right and then left_ so the NTS-1 can register a change in encoder value)
 2. Press a note to sample the incoming audio (triggered when the signal is slightly above or below zero)
-3. The sample can now be played using the keyboard (where the **B encoder** is used to set the release time)
+3. The sample can now be played using the keyboard (where the **A encoder** is used to set the release time)
 
 ### Re-trigger mode
 1. Turn the **B encoder to the far right** to enable **re-trigger** sample mode (_left and then right_ so the NTS-1 can register a change in encoder value)
