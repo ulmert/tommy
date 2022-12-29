@@ -42,6 +42,8 @@
     #define NVOICES 3
 #endif
 
+#define RESAMPLINGRATE 48000.f
+
 #define NOISETHRESHOLD 0.01 
 
 #define BUFMINLENGTH 4096
@@ -59,7 +61,8 @@ int16_t bufA[BUFMAXLENGTH + 1] __sdram;
 int16_t bufB[BUFMAXLENGTH + 1] __sdram;
 
 int16_t *pBufSampling;
-uint16_t samplingIdx;
+float samplingIdx;
+float samplingStep;
 uint16_t samplingBufLen;
 uint16_t lastSampledBufLength;
 float samplingRootFreq;
@@ -112,6 +115,8 @@ void MODFX_INIT(uint32_t platform, uint32_t api)
     lastSampledBufLength = BUFMAXLENGTH;
 
     playbackVceIdx = 0;
+
+    samplingStep = RESAMPLINGRATE / 48000.f;
 }
 
 void MODFX_PROCESS(const float *main_xn, float *main_yn,
@@ -178,7 +183,7 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                 xfadePlaybackBufLen[playbackVceIdx] = playbackBufLen[playbackVceIdx];
                 pXfadePlaybackBuf[playbackVceIdx] = pPlaybackBuf[playbackVceIdx];
 
-                playbackStep[playbackVceIdx] = freq / playbackRootFreq;
+                playbackStep[playbackVceIdx] = freq / playbackRootFreq * samplingStep;
                 playbackIdx[playbackVceIdx] = 0; 
                 pPlaybackBuf[playbackVceIdx] = pBufPlayback;
 
@@ -247,7 +252,7 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
         if (samplingIdx < 128) {
             d = ((float)samplingIdx / 128.f);
         }
-        pBufSampling[samplingIdx] = (int16_t) ((audioCleanedSample * d) * (float)SDIV); 
+        pBufSampling[(uint32_t)samplingIdx] = (int16_t) ((audioCleanedSample * d) * (float)SDIV); 
 
         if (samplingIdx >= samplingBufLen) {
             isSampling = 0;
@@ -257,7 +262,7 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                 sampleMode = SAMPLEMODE_NOTRIG;    
             }
         } else {
-            samplingIdx++;
+            samplingIdx += samplingStep;
         }
     }
 
@@ -274,18 +279,21 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
 
 void MODFX_PARAM(uint8_t index, int32_t value)
 {
-  const float valf = q31_to_f32(value);
+  float valf = q31_to_f32(value);
   switch (index) {
     case k_user_modfx_param_time:
         playbackBufLength = BUFMINLENGTH + ((BUFMAXLENGTH - BUFMINLENGTH) * valf);
         break;
 
     case k_user_modfx_param_depth:
-        if (valf < 0.1) {
+        if (valf < 0.5) {
             sampleMode = SAMPLEMODE_SINGLETRIG;
-        } else if (valf > 0.9) {
+            samplingStep = ((1.0 - (valf / 0.5)) * 44000.f + (48000.f - 44000.f)) / 48000.f;
+        } else if (valf > 0.5) {
             sampleMode = SAMPLEMODE_RETRIG;
             samplingTrigFreq = 0;
+            valf -= 0.5;
+            samplingStep = ((valf / 0.5) * 44000.f + (48000.f - 44000.f)) / 48000.f;
         } else {
             sampleMode = SAMPLEMODE_NOTRIG;
         }
