@@ -34,7 +34,13 @@
 #include "fx_api.h"
 #include "float_math.h"
 
-#define NVOICES 3
+//#define STEREO_PING_PONG // Enable for stereo ping-pong playback/output
+
+#ifdef STEREO_PING_PONG
+    #define NVOICES 2
+#else
+    #define NVOICES 3
+#endif
 
 #define NOISETHRESHOLD 0.01 
 
@@ -116,9 +122,13 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
   for (uint32_t i = 0; i < frames; i++) {
     const float oscillatorSample = main_xn[i + i + 1];
 
-    const float audioCleanedSample = (main_yn[i + i] - oscillatorSample) * 2;
+    const float audioCleanedSample = (main_yn[i + i] - oscillatorSample);
  
     main_yn[i + i + 1] = 0;
+#ifdef STEREO_PING_PONG
+    main_yn[i + i] = 0;
+#endif
+   
    
     if (oscillatorSample > NOISETHRESHOLD || oscillatorSample < -NOISETHRESHOLD) {
     
@@ -199,8 +209,11 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                 const float fr = playbackIdx[j] - playbackIdxInt;
 
                 const float sample = ((float)pPlaybackBuf[j][playbackIdxInt] * (1.0 - fr)) + ((float)pPlaybackBuf[j][playbackIdxInt + 1] * fr);
-            
+#ifdef STEREO_PING_PONG
+                main_yn[i + i + (j & 1)] += (sample / (float)SDIV) * d;
+#else
                 main_yn[i + i + 1] += (sample / (float)SDIV) * d;
+#endif
 
             } else {
                 const uint16_t playbackIdxInt = playbackIdx[j];
@@ -219,7 +232,11 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                     xfadePlaybackIdx[j] += xfadePlaybackStep[j];
 
                 }
+#ifdef STEREO_PING_PONG                
+                main_yn[i + i + (j & 1)] += (sample / (float)SDIV);
+#else
                 main_yn[i + i + 1] += (sample / (float)SDIV);
+#endif
             }
             playbackIdx[j] += playbackStep[j];
         }
@@ -247,7 +264,9 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
     if (sampleMode == SAMPLEMODE_SINGLETRIG) {
         main_yn[i + i] = audioCleanedSample;
     } else {
+#ifndef STEREO_PING_PONG
         main_yn[i + i] =  main_yn[i + i + 1];
+#endif
     }
   }
 
