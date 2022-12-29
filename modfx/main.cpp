@@ -65,11 +65,13 @@ float playbackRootFreq;
 float playbackStep[NVOICES];
 float playbackIdx[NVOICES];
 uint16_t playbackBufLen[NVOICES];
+int16_t *pPlaybackBuf[NVOICES];
 
 float xfadePlaybackStep[NVOICES];
 float xfadePlaybackIdx[NVOICES];
 float xfadeLastGain[NVOICES];
 uint16_t xfadePlaybackBufLen[NVOICES];
+int16_t *pXfadePlaybackBuf[NVOICES];
 
 uint32_t dutySampleCount;
 
@@ -164,9 +166,11 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                 xfadePlaybackIdx[playbackVceIdx] = playbackIdx[playbackVceIdx];
                 xfadeLastGain[playbackVceIdx] = 1.f - playbackIdx[playbackVceIdx] / playbackBufLen[playbackVceIdx];
                 xfadePlaybackBufLen[playbackVceIdx] = playbackBufLen[playbackVceIdx];
+                pXfadePlaybackBuf[playbackVceIdx] = pPlaybackBuf[playbackVceIdx];
 
                 playbackStep[playbackVceIdx] = freq / playbackRootFreq;
                 playbackIdx[playbackVceIdx] = 0; 
+                pPlaybackBuf[playbackVceIdx] = pBufPlayback;
 
                 if (sampleMode == SAMPLEMODE_RETRIG) {
                     playbackBufLen[playbackVceIdx] = lastSampledBufLength;
@@ -194,7 +198,7 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                 const uint16_t playbackIdxInt = playbackIdx[j];
                 const float fr = playbackIdx[j] - playbackIdxInt;
 
-                const float sample = ((float)pBufPlayback[playbackIdxInt] * (1.0 - fr)) + ((float)pBufPlayback[playbackIdxInt + 1] * fr);
+                const float sample = ((float)pPlaybackBuf[j][playbackIdxInt] * (1.0 - fr)) + ((float)pPlaybackBuf[j][playbackIdxInt + 1] * fr);
             
                 main_yn[i + i + 1] += (sample / (float)SDIV) * d;
 
@@ -202,7 +206,7 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                 const uint16_t playbackIdxInt = playbackIdx[j];
                 const float fr = playbackIdx[j] - playbackIdxInt;
 
-                float sample = ((float)pBufPlayback[playbackIdxInt] * (1.0 - fr)) + ((float)pBufPlayback[playbackIdxInt + 1] * fr);
+                float sample = ((float)pPlaybackBuf[j][playbackIdxInt] * (1.0 - fr)) + ((float)pPlaybackBuf[j][playbackIdxInt + 1] * fr);
 
                 if (xfadePlaybackStep[j] < xfadePlaybackBufLen[j]) {
                     const float d = xfadeLastGain[j] * (1.0 - (playbackIdx[j] / 128.f));
@@ -210,7 +214,7 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                     const uint16_t playbackIdxInt = xfadePlaybackIdx[j];
                     const float fr = xfadePlaybackIdx[j] - playbackIdxInt;
 
-                    sample = sample + (((float)pBufPlayback[playbackIdxInt] * (1.0 - fr)) + ((float)pBufPlayback[playbackIdxInt + 1] * fr)) * d;
+                    sample = sample + (((float)pXfadePlaybackBuf[j][playbackIdxInt] * (1.0 - fr)) + ((float)pXfadePlaybackBuf[j][playbackIdxInt + 1] * fr)) * d;
 
                     xfadePlaybackIdx[j] += xfadePlaybackStep[j];
 
