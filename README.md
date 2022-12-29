@@ -19,7 +19,6 @@ Make sure an audio source is plugged into the _left input channel_ of the NTS-1 
 1. Turn the **B encoder to the far right** to enable **re-trigger** sample mode (_left and then right_ so the NTS-1 can register a change in encoder value)
 2. Press a note to sample the incoming audio (triggered when the signal is slightly above or below zero)
 3. The NTS-1 will now re-sample everytime the initial note is triggered (e.g. using the arpeggiator) so ideally have a constant external audio feed
-(_depending on the release time, clicks can occur due to the experimental nature of this mode_)
 
 The pre-build binaries can be uploaded using the NTS-1 digital Librarian application.
 
