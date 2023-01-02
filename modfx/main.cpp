@@ -33,14 +33,17 @@
 #include "usermodfx.h"
 #include "fx_api.h"
 #include "float_math.h"
+#include "biquad.hpp"
 
 //#define STEREO_PING_PONG // Enable for stereo ping-pong playback/output
 
 #ifdef STEREO_PING_PONG
-    #define NVOICES 2
+    #define NVOICES 4
 #else
     #define NVOICES 3
 #endif
+
+#define LPFILTER
 
 #define RESAMPLINGRATE 48000.f
 
@@ -88,6 +91,10 @@ uint8_t isSampling, swapBuffers, sampleMode;
 
 uint8_t playbackVceIdx;
 
+float resamplingFreq;
+
+dsp::BiQuad lpf;
+
 void MODFX_INIT(uint32_t platform, uint32_t api)
 {
     pBufSampling = &bufA[0]; 
@@ -116,7 +123,13 @@ void MODFX_INIT(uint32_t platform, uint32_t api)
 
     playbackVceIdx = 0;
 
-    samplingStep = RESAMPLINGRATE / 48000.f;
+    resamplingFreq = RESAMPLINGRATE;
+    samplingStep = resamplingFreq / 48000.f;
+
+    lpf.flush();
+    float wc = lpf.mCoeffs.wc(48000.f, (1.f / 48000.f));
+    lpf.mCoeffs.setFOLP(fx_tanpif(wc));
+
 }
 
 void MODFX_PROCESS(const float *main_xn, float *main_yn,
@@ -163,6 +176,10 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                     samplingBufLen = BUFMAXLENGTH;
                     isSampling = 1;
 
+                    lpf.flush();
+                    float wc = lpf.mCoeffs.wc(resamplingFreq, (1.f / 48000.f));
+                    lpf.mCoeffs.setFOLP(fx_tanpif(wc));
+
                 } else if (sampleMode == SAMPLEMODE_RETRIG && 
                         (!samplingTrigFreq ||
                         (samplingTrigFreq > (freq - 0.5) && samplingTrigFreq < (freq + 0.5)))) {
@@ -172,6 +189,10 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                     samplingRootFreq = freq;
                     samplingBufLen = playbackBufLength;
                     isSampling = 1;
+
+                    lpf.flush();
+                    float wc = lpf.mCoeffs.wc(resamplingFreq, (1.f / 48000.f));
+                    lpf.mCoeffs.setFOLP(fx_tanpif(wc));
                 }
             }
             
@@ -215,7 +236,7 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
 
                 const float sample = ((float)pPlaybackBuf[j][playbackIdxInt] * (1.0 - fr)) + ((float)pPlaybackBuf[j][playbackIdxInt + 1] * fr);
 #ifdef STEREO_PING_PONG
-                main_yn[i + i + (j & 1)] += (sample / (float)SDIV) * d;
+                main_yn[i + i + (j & 1)] += ((sample / (float)SDIV) * d);
 #else
                 main_yn[i + i + 1] += (sample / (float)SDIV) * d;
 #endif
@@ -252,8 +273,13 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
         if (samplingIdx < 128) {
             d = ((float)samplingIdx / 128.f);
         }
-        pBufSampling[(uint32_t)samplingIdx] = (int16_t) ((audioCleanedSample * d) * (float)SDIV); 
 
+#ifdef LPFILTER
+        float filteredSample = lpf.process_so(audioCleanedSample);
+        pBufSampling[(uint32_t)samplingIdx] = (int16_t) ((filteredSample * d) * (float)SDIV); 
+#else
+        pBufSampling[(uint32_t)samplingIdx] = (int16_t) ((audioCleanedSample * d) * (float)SDIV); 
+#endif
         if (samplingIdx >= samplingBufLen) {
             isSampling = 0;
             swapBuffers = 1;
@@ -288,12 +314,16 @@ void MODFX_PARAM(uint8_t index, int32_t value)
     case k_user_modfx_param_depth:
         if (valf < 0.5) {
             sampleMode = SAMPLEMODE_SINGLETRIG;
-            samplingStep = ((1.0 - (valf / 0.5)) * 44000.f + (48000.f - 44000.f)) / 48000.f;
+            resamplingFreq = (1.0 - (valf / 0.5)) * 44100.f;
+            samplingStep = (resamplingFreq + (48000.f - 44100.f)) / 48000.f;
+            resamplingFreq *= 0.5;
         } else if (valf > 0.5) {
             sampleMode = SAMPLEMODE_RETRIG;
             samplingTrigFreq = 0;
             valf -= 0.5;
-            samplingStep = ((valf / 0.5) * 44000.f + (48000.f - 44000.f)) / 48000.f;
+            resamplingFreq = (valf / 0.5) * 44100.f;
+            samplingStep = (resamplingFreq + (48000.f - 44100.f)) / 48000.f;
+            resamplingFreq *= 0.5;
         } else {
             sampleMode = SAMPLEMODE_NOTRIG;
         }
