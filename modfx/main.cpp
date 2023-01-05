@@ -35,7 +35,7 @@
 #include "float_math.h"
 #include "biquad.hpp"
 
-//#define STEREO_PING_PONG // Enable for stereo ping-pong playback/output
+#define STEREO_PING_PONG // Enable for stereo ping-pong playback/output
 
 #ifdef STEREO_PING_PONG
     #define NVOICES 4
@@ -49,7 +49,7 @@
 
 #define NOISETHRESHOLD 0.01 
 
-#define BUFMINLENGTH 4096
+#define BUFMINLENGTH 1024
 #define BUFMAXLENGTH 32767
 
 #define SAMPLEMODE_NOTRIG 0
@@ -65,7 +65,7 @@ int16_t bufB[BUFMAXLENGTH + 1] __sdram;
 
 int16_t *pBufSampling;
 float samplingIdx;
-float samplingStep;
+float samplingStep, currentSamplingStep, nextSamplingStep;
 uint16_t samplingBufLen;
 uint16_t lastSampledBufLength;
 float samplingRootFreq;
@@ -125,10 +125,8 @@ void MODFX_INIT(uint32_t platform, uint32_t api)
 
     resamplingFreq = RESAMPLINGRATE;
     samplingStep = resamplingFreq / 48000.f;
-
-    lpf.flush();
-    float wc = lpf.mCoeffs.wc(48000.f, (1.f / 48000.f));
-    lpf.mCoeffs.setFOLP(fx_tanpif(wc));
+    nextSamplingStep = samplingStep;
+    currentSamplingStep = samplingStep;
 
 }
 
@@ -176,9 +174,13 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                     samplingBufLen = BUFMAXLENGTH;
                     isSampling = 1;
 
+                    currentSamplingStep = nextSamplingStep;
+
                     lpf.flush();
                     float wc = lpf.mCoeffs.wc(resamplingFreq, (1.f / 48000.f));
+                    //lpf.mCoeffs.setSOLP(fx_tanpif(wc), 1.41421356237);
                     lpf.mCoeffs.setFOLP(fx_tanpif(wc));
+                   
 
                 } else if (sampleMode == SAMPLEMODE_RETRIG && 
                         (!samplingTrigFreq ||
@@ -190,9 +192,13 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                     samplingBufLen = playbackBufLength;
                     isSampling = 1;
 
+                    currentSamplingStep = nextSamplingStep;
+
                     lpf.flush();
                     float wc = lpf.mCoeffs.wc(resamplingFreq, (1.f / 48000.f));
+                    //lpf.mCoeffs.setSOLP(fx_tanpif(wc), 1.41421356237);
                     lpf.mCoeffs.setFOLP(fx_tanpif(wc));
+                    
                 }
             }
             
@@ -269,18 +275,22 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
     }
 
     if (isSampling && (samplingIdx > 0 || sampleMode != SAMPLEMODE_SINGLETRIG || audioCleanedSample > 0.01 || audioCleanedSample < -0.01)) {
+        
         float d = 1;
         if (samplingIdx < 128) {
             d = ((float)samplingIdx / 128.f);
         }
 
 #ifdef LPFILTER
-        float filteredSample = lpf.process_so(audioCleanedSample);
-        pBufSampling[(uint32_t)samplingIdx] = (int16_t) ((filteredSample * d) * (float)SDIV); 
+        pBufSampling[(uint32_t)samplingIdx] = (int16_t) ((lpf.process_fo(audioCleanedSample) * d) * (float)SDIV); 
+//        pBufSampling[(uint32_t)samplingIdx] = (int16_t) ((lpf.process_so(audioCleanedSample) * d) * (float)SDIV); 
+
 #else
         pBufSampling[(uint32_t)samplingIdx] = (int16_t) ((audioCleanedSample * d) * (float)SDIV); 
 #endif
-        if (samplingIdx >= samplingBufLen) {
+        if (samplingIdx > samplingBufLen) {
+            samplingStep = currentSamplingStep;
+
             isSampling = 0;
             swapBuffers = 1;
 
@@ -288,7 +298,7 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn,
                 sampleMode = SAMPLEMODE_NOTRIG;    
             }
         } else {
-            samplingIdx += samplingStep;
+            samplingIdx += currentSamplingStep;
         }
     }
 
@@ -315,14 +325,14 @@ void MODFX_PARAM(uint8_t index, int32_t value)
         if (valf < 0.5) {
             sampleMode = SAMPLEMODE_SINGLETRIG;
             resamplingFreq = (1.0 - (valf / 0.5)) * 44100.f;
-            samplingStep = (resamplingFreq + (48000.f - 44100.f)) / 48000.f;
+            nextSamplingStep = (resamplingFreq + (48000.f - 44100.f)) / 48000.f;
             resamplingFreq *= 0.5;
         } else if (valf > 0.5) {
             sampleMode = SAMPLEMODE_RETRIG;
             samplingTrigFreq = 0;
             valf -= 0.5;
             resamplingFreq = (valf / 0.5) * 44100.f;
-            samplingStep = (resamplingFreq + (48000.f - 44100.f)) / 48000.f;
+            nextSamplingStep = (resamplingFreq + (48000.f - 44100.f)) / 48000.f;
             resamplingFreq *= 0.5;
         } else {
             sampleMode = SAMPLEMODE_NOTRIG;
